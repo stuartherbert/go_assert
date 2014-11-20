@@ -13,6 +13,20 @@ import (
     "runtime"
 )
 
+func getCaller(cd int) (string, string, int) {
+    pc, file, line, ok := runtime.Caller(cd + 1)
+    if !ok {
+        return "unknown", "unknown", 0
+    }
+
+    them := runtime.FuncForPC(pc)
+    if them == nil {
+        return "unnamed", file, line
+    }
+
+    return them.Name(), file, line
+}
+
 func FailNow() {
     os.Exit(1)
 }
@@ -21,16 +35,16 @@ func Error(args ...interface{}) {
     fmt.Println(args...)
 }
 
-func assert(result bool, f func(), cd int) {
+func assert(result bool, f func(), failFn func(), cd int) {
     if !result {
         _, file, line, _ := runtime.Caller(cd + 1)
         fmt.Printf("%s:%d", file, line)
         f()
-        FailNow()
+        failFn()
     }
 }
 
-func equal(exp, got interface{}, cd int, args ...interface{}) {
+func equal(failFn func(), exp, got interface{}, cd int, args ...interface{}) {
     fn := func() {
         for _, desc := range pretty.Diff(exp, got) {
             Error("!", desc)
@@ -40,7 +54,7 @@ func equal(exp, got interface{}, cd int, args ...interface{}) {
         }
     }
     result := reflect.DeepEqual(exp, got)
-    assert(result, fn, cd+1)
+    assert(result, fn, failFn, cd+1)
 }
 
 func tt(result bool, cd int, args ...interface{}) {
@@ -50,7 +64,7 @@ func tt(result bool, cd int, args ...interface{}) {
             Error("!", " -", fmt.Sprint(args...))
         }
     }
-    assert(result, fn, cd+1)
+    assert(result, fn, FailNow, cd+1)
 }
 
 func T(result bool, args ...interface{}) {
@@ -61,15 +75,15 @@ func Tf(result bool, format string, args ...interface{}) {
     tt(result, 1, fmt.Sprintf(format, args...))
 }
 
-func Equal(exp, got interface{}, args ...interface{}) {
-    equal(exp, got, 1, args...)
+func Equal(failFn func(), exp, got interface{}, args ...interface{}) {
+    equal(failFn, exp, got, 1, args...)
 }
 
-func Equalf(exp, got interface{}, format string, args ...interface{}) {
-    equal(exp, got, 1, fmt.Sprintf(format, args...))
+func Equalf(failFn func(), exp, got interface{}, format string, args ...interface{}) {
+    equal(failFn, exp, got, 1, fmt.Sprintf(format, args...))
 }
 
-func NotEqual(exp, got interface{}, args ...interface{}) {
+func NotEqual(failFn func(), exp, got interface{}, args ...interface{}) {
     fn := func() {
         Error("!  Unexpected: <%#v>", exp)
         if len(args) > 0 {
@@ -77,12 +91,12 @@ func NotEqual(exp, got interface{}, args ...interface{}) {
         }
     }
     result := !reflect.DeepEqual(exp, got)
-    assert(result, fn, 1)
+    assert(result, fn, failFn, 1)
 }
 
 func Panic(err interface{}, fn func()) {
     defer func() {
-        equal(err, recover(), 3)
+        equal(FailNow, err, recover(), 3)
     }()
     fn()
 }
